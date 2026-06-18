@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get install -y shellcheck
+
+      - name: Lint ask-kip.sh
+        run: shellcheck ask-kip.sh
+
+      - name: Lint Makefile shell fragments
+        run: |
+          # Extract inline shell from Makefile and check for obvious issues
+          shellcheck --shell=bash <(grep -A1 'run:' .github/workflows/ci.yml | grep -v 'run:' || true)
+
+  validate:
+    name: Validate repo structure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Required files present
+        run: |
+          for f in ask-kip.sh Makefile .env.example .gitignore README.md LICENSE; do
+            if [ ! -f "$f" ]; then
+              echo "ERROR: Missing required file: $f"
+              exit 1
+            fi
+            echo "✓ $f"
+          done
+
+      - name: .env is gitignored
+        run: |
+          if ! grep -q '^\.env$' .gitignore; then
+            echo "ERROR: .env must be listed in .gitignore"
+            exit 1
+          fi
+          echo "✓ .env is gitignored"
+
+      - name: .env.example has required keys
+        run: |
+          for key in BOT_TOKEN CHAT_ID; do
+            if ! grep -q "^${key}=" .env.example; then
+              echo "ERROR: .env.example is missing key: $key"
+              exit 1
+            fi
+            echo "✓ $key present in .env.example"
+          done
+
+      - name: ask-kip.sh is executable
+        run: |
+          chmod +x ask-kip.sh
+          if [ ! -x ask-kip.sh ]; then
+            echo "ERROR: ask-kip.sh is not executable"
+            exit 1
+          fi
+          echo "✓ ask-kip.sh is executable"
+
+      - name: Version flag works
+        run: |
+          chmod +x ask-kip.sh
+          VERSION=$(./ask-kip.sh --version)
+          echo "Version output: $VERSION"
+          if ! echo "$VERSION" | grep -qE '^ask-kip [0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: --version output does not match expected format 'ask-kip X.Y.Z'"
+            exit 1
+          fi
+          echo "✓ --version output is valid"

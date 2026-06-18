@@ -1,0 +1,13 @@
+# Credentials — never commit
+.env
+
+# whisper.cpp build artifacts and models
+whisper.cpp/build/
+whisper.cpp/models/*.bin
+whisper.cpp/models/*.bin-*
+
+# Temporary audio and transcript files
+/tmp/ask-kip-*
+
+# OS
+.DS_Store
