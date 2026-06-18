@@ -74,8 +74,15 @@ fi
 if [ -f "$LOCK_FILE" ]; then
     # Second press — stop recording
     ARECORD_PID=$(cat "$LOCK_FILE")
-    kill "$ARECORD_PID" 2>/dev/null || true
     rm -f "$LOCK_FILE"
+    kill "$ARECORD_PID" 2>/dev/null || true
+    # Safety net: stop any other stray ask-kip recorders
+    pkill -f "arecord.*$AUDIO_FILE" 2>/dev/null || true
+    # Wait for the recorder to flush and finalize the WAV header
+    for _ in $(seq 1 20); do
+        kill -0 "$ARECORD_PID" 2>/dev/null || break
+        sleep 0.1
+    done
 
     notify-send "ask-kip" "Transcribing..."
 
@@ -114,6 +121,10 @@ if [ -f "$LOCK_FILE" ]; then
 
 else
     # First press — start recording
+    # Clean up any orphaned recorder left behind by a previous run
+    pkill -f "arecord.*$AUDIO_FILE" 2>/dev/null || true
+    rm -f "$LOCK_FILE"
+
     notify-send "ask-kip" "Recording... (press hotkey again to send)"
 
     arecord -f S16_LE -r 16000 -c 1 "$AUDIO_FILE" &
