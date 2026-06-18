@@ -1,9 +1,12 @@
-.PHONY: install build-whisper download-model check test install-hotkey clean help
+.PHONY: install build-whisper download-model setup-telegram login check test install-hotkey clean help
 
 WHISPER_DIR := whisper.cpp
 WHISPER_BIN := $(WHISPER_DIR)/build/bin/whisper-cli
 WHISPER_MODEL := $(WHISPER_DIR)/models/ggml-base.en.bin
 MODEL_NAME := base.en
+VENV := .venv
+PYTHON := $(VENV)/bin/python
+SEND_SCRIPT := send_message.py
 SCRIPT := $(abspath ask-kip.sh)
 HOTKEY_NAME := Ask Kip
 HOTKEY_BINDING := <Super>k
@@ -13,21 +16,24 @@ help:
 	@echo "ask-kip — voice query interface for Kip / OpenClaw"
 	@echo ""
 	@echo "Targets:"
-	@echo "  make install          Build whisper.cpp and download the default model"
+	@echo "  make install          Build whisper.cpp, download the model, set up Telethon"
+	@echo "  make login            Log in to Telegram as yourself (one-time, interactive)"
 	@echo "  make install-hotkey   Bind Super+K to ask-kip in GNOME (requires install first)"
-	@echo "  make test             Verify config, mic, and Telegram credentials"
+	@echo "  make test             Verify config, mic, and Telegram login"
 	@echo "  make build-whisper    Build whisper.cpp only"
 	@echo "  make download-model   Download the Whisper model only"
+	@echo "  make setup-telegram   Create the Python venv and install Telethon"
 	@echo "  make check            Verify all system dependencies are present"
 	@echo "  make clean            Remove build artifacts (keeps model)"
 
-install: check build-whisper download-model
+install: check build-whisper download-model setup-telegram
 	@echo ""
 	@echo "✓ ask-kip is ready."
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Copy .env.example to .env and fill in your values"
-	@echo "  2. Run: make install-hotkey   (GNOME, binds Super+K)"
+	@echo "  2. Run: make login            (log in to Telegram as yourself)"
+	@echo "  3. Run: make install-hotkey   (GNOME, binds Super+K)"
 	@echo "     Or bind $(SCRIPT) manually in your desktop environment."
 	@echo "  See README.md for details."
 
@@ -77,32 +83,43 @@ test:
 		echo "   ✗ Model not found — run: make download-model"; \
 	fi
 	@echo ""
-	@echo "3. Checking .env..."
+	@echo "3. Checking Telethon + .env..."
+	@if [ -x "$(PYTHON)" ] && $(PYTHON) -c "import telethon" >/dev/null 2>&1; then \
+		echo "   ✓ Telethon installed"; \
+	else \
+		echo "   ✗ Telethon not installed — run: make setup-telegram"; \
+	fi
 	@if [ ! -f .env ]; then \
 		echo "   ✗ .env not found — copy .env.example and fill in your values"; \
 		exit 1; \
 	fi
 	@. ./.env; \
-	if [ -z "$${BOT_TOKEN:-}" ]; then \
-		echo "   ✗ BOT_TOKEN is not set in .env"; \
+	if [ -z "$${TELEGRAM_API_ID:-}" ]; then \
+		echo "   ✗ TELEGRAM_API_ID is not set in .env"; \
 	else \
-		echo "   ✓ BOT_TOKEN is set"; \
+		echo "   ✓ TELEGRAM_API_ID is set"; \
 	fi; \
-	if [ -z "$${CHAT_ID:-}" ]; then \
-		echo "   ✗ CHAT_ID is not set in .env"; \
+	if [ -z "$${TELEGRAM_API_HASH:-}" ]; then \
+		echo "   ✗ TELEGRAM_API_HASH is not set in .env"; \
 	else \
-		echo "   ✓ CHAT_ID is set"; \
+		echo "   ✓ TELEGRAM_API_HASH is set"; \
+	fi; \
+	if [ -z "$${KIP_TARGET:-}" ]; then \
+		echo "   ✗ KIP_TARGET is not set in .env"; \
+	else \
+		echo "   ✓ KIP_TARGET is set"; \
 	fi
 	@echo ""
-	@echo "4. Checking Telegram credentials..."
-	@. ./.env; \
-	RESULT=$$(curl -s "https://api.telegram.org/bot$${BOT_TOKEN}/getMe"); \
-	OK=$$(echo "$$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok',''))" 2>/dev/null); \
-	if [ "$$OK" = "True" ]; then \
-		BOT_NAME=$$(echo "$$RESULT" | python3 -c "import json,sys; print(json.load(sys.stdin)['result']['username'])" 2>/dev/null); \
-		echo "   ✓ Telegram token valid — bot: @$$BOT_NAME"; \
+	@echo "4. Checking Telegram login..."
+	@if [ ! -x "$(PYTHON)" ]; then \
+		echo "   ✗ Python venv missing — run: make setup-telegram"; \
 	else \
-		echo "   ✗ Telegram token invalid or network unreachable"; \
+		set -a; . ./.env; set +a; \
+		if $(PYTHON) -c "import os, sys; from telethon.sync import TelegramClient; s=os.environ.get('TELEGRAM_SESSION') or '.telegram.session'; c=TelegramClient(s, int(os.environ['TELEGRAM_API_ID']), os.environ['TELEGRAM_API_HASH']); c.connect(); ok=c.is_user_authorized(); c.disconnect(); sys.exit(0 if ok else 1)" >/dev/null 2>&1; then \
+			echo "   ✓ Logged in to Telegram"; \
+		else \
+			echo "   ✗ Not logged in — run: make login"; \
+		fi; \
 	fi
 	@echo ""
 	@echo "5. Checking mic (recording 2 seconds of silence)..."
@@ -144,6 +161,28 @@ download-model:
 		bash $(WHISPER_DIR)/models/download-ggml-model.sh $(MODEL_NAME); \
 		echo "✓ Model downloaded."; \
 	fi
+
+setup-telegram:
+	@if [ ! -d "$(VENV)" ]; then \
+		echo "Creating Python venv at $(VENV)..."; \
+		python3 -m venv $(VENV); \
+	fi
+	@echo "Installing Telethon..."
+	@$(PYTHON) -m pip install --quiet --upgrade pip
+	@$(PYTHON) -m pip install --quiet telethon
+	@echo "✓ Telethon installed."
+
+login:
+	@if [ ! -x "$(PYTHON)" ]; then \
+		echo "ERROR: Python venv not found — run: make setup-telegram"; \
+		exit 1; \
+	fi
+	@if [ ! -f .env ]; then \
+		echo "ERROR: .env not found. Copy .env.example and fill in your values first."; \
+		exit 1; \
+	fi
+	@echo "Logging in to Telegram as yourself (interactive)..."
+	@set -a; . ./.env; set +a; $(PYTHON) $(SEND_SCRIPT) login
 
 clean:
 	@echo "Removing build artifacts..."

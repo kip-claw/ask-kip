@@ -4,8 +4,10 @@
 
 A hotkey-triggered voice query tool for [Kip](https://github.com/kip-claw) and [OpenClaw](https://openclaw.ai). Press a hotkey to start recording, press it again to transcribe and send your query to your Kip agent via Telegram.
 
+Messages are sent from **your own Telegram account** (via MTProto), so Kip sees them as coming from you — not from a bot.
+
 **Pipeline:**
-Hotkey → mic recording → [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcription → Telegram Bot API → Kip responds in Telegram
+Hotkey → mic recording → [whisper.cpp](https://github.com/ggerganov/whisper.cpp) transcription → Telegram (as you) → Kip responds in Telegram
 
 No cloud STT. No always-on process. No GPU required.
 
@@ -14,14 +16,14 @@ No cloud STT. No always-on process. No GPU required.
 ## Requirements
 
 - Linux with GNOME (or any desktop environment that supports custom hotkey commands)
-- `build-essential`, `cmake`, `curl`, `python3`, `arecord` (alsa-utils), `libnotify-bin`
-- A Kip / OpenClaw instance with a Telegram bot configured
-- Your Telegram bot token and chat ID
+- `build-essential`, `cmake`, `python3`, `python3-venv`, `arecord` (alsa-utils), `libnotify-bin`
+- A Kip / OpenClaw instance reachable on Telegram
+- Telegram API credentials (`api_id` + `api_hash`) from [my.telegram.org](https://my.telegram.org)
 
 Install dependencies on Ubuntu/Debian:
 
 ```bash
-sudo apt install build-essential cmake curl python3 alsa-utils libnotify-bin
+sudo apt install build-essential cmake python3 python3-venv alsa-utils libnotify-bin
 ```
 
 ---
@@ -35,9 +37,11 @@ make install
 ```
 
 `make install` will:
+
 1. Check that all system dependencies are present
 2. Clone and build `whisper.cpp`
 3. Download the `base.en` Whisper model (~140MB)
+4. Create a Python virtualenv and install Telethon
 
 ---
 
@@ -50,9 +54,26 @@ cp .env.example .env
 nano .env
 ```
 
-Set `BOT_TOKEN` to your OpenClaw Telegram bot token and `CHAT_ID` to your Telegram user ID. Everything else is optional.
+Set `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` to the credentials you create at
+[my.telegram.org](https://my.telegram.org) → **API development tools**. Set
+`KIP_TARGET` to your Kip bot's `@username` (or a numeric chat id) — that's where
+your voice queries are sent. Everything else is optional.
 
 `.env` is gitignored and will never be committed.
+
+---
+
+## Log in to Telegram
+
+Log in once as yourself to create a private session file:
+
+```bash
+make login
+```
+
+You'll be prompted for your phone number, the login code Telegram sends you, and
+your 2FA password if you have one. This writes `.telegram.session` (gitignored).
+Messages are then sent from your account, so Kip sees them as coming from you.
 
 ---
 
@@ -64,7 +85,7 @@ Set `BOT_TOKEN` to your OpenClaw Telegram bot token and `CHAT_ID` to your Telegr
 make install-hotkey
 ```
 
-This binds `Super+K` to `ask-kip.sh` using `gsettings`. Requires a `.env` file to be present first.
+This binds `Super+K` to `ask-kip.sh` using `gsettings`. Requires a `.env` file and a completed `make login` first.
 
 ### GNOME (manual)
 
@@ -108,15 +129,17 @@ bash whisper.cpp/models/download-ggml-model.sh medium.en  # ~1.5GB, ~5x slower
 
 ## Makefile targets
 
-| Target | Description |
-|---|---|
-| `make install` | Full install: check deps, build whisper.cpp, download model |
-| `make install-hotkey` | Bind Super+K to ask-kip in GNOME |
-| `make test` | Verify config, mic, and Telegram credentials without sending |
-| `make build-whisper` | Build whisper.cpp only |
-| `make download-model` | Download the Whisper model only |
-| `make check` | Verify all system dependencies are present |
-| `make clean` | Remove build artifacts (preserves downloaded model) |
+| Target                | Description                                                                  |
+| --------------------- | ---------------------------------------------------------------------------- |
+| `make install`        | Full install: check deps, build whisper.cpp, download model, set up Telethon |
+| `make login`          | Log in to Telegram as yourself (one-time, interactive)                       |
+| `make install-hotkey` | Bind Super+K to ask-kip in GNOME                                             |
+| `make test`           | Verify config, mic, and Telegram login without sending                       |
+| `make build-whisper`  | Build whisper.cpp only                                                       |
+| `make download-model` | Download the Whisper model only                                              |
+| `make setup-telegram` | Create the Python venv and install Telethon                                  |
+| `make check`          | Verify all system dependencies are present                                   |
+| `make clean`          | Remove build artifacts (preserves downloaded model)                          |
 
 ---
 
@@ -128,9 +151,10 @@ bash whisper.cpp/models/download-ggml-model.sh medium.en  # ~1.5GB, ~5x slower
 
 **Transcription is garbled** — check mic input level in your system sound settings. Speak clearly and leave a brief pause before and after your query.
 
-**Telegram send fails** — run `make test` to validate your token. Confirm `BOT_TOKEN` in `.env` is correct and has no trailing whitespace.
+**Telegram send fails** — run `make test` to check your login state. If it reports "Not logged in," run `make login`. Confirm `TELEGRAM_API_ID`, `TELEGRAM_API_HASH`, and `KIP_TARGET` in `.env` are correct and have no trailing whitespace.
 
 **Lock file stuck after a crash** — clear it:
+
 ```bash
 rm -f /tmp/ask-kip-recording.lock
 ```

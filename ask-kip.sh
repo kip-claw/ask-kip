@@ -24,7 +24,10 @@ TRANSCRIPT_FILE="${TRANSCRIPT_BASE}.txt"
 WHISPER_BIN="$SCRIPT_DIR/whisper.cpp/build/bin/whisper-cli"
 WHISPER_MODEL="$SCRIPT_DIR/whisper.cpp/models/ggml-base.en.bin"
 
-# ── Load config ───────────────────────────────────────────────────────────────
+SEND_SCRIPT="$SCRIPT_DIR/send_message.py"
+VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
+
+# ── Load config ────────────────────────────────────────────────────────────────────────────────────
 
 if [ ! -f "$ENV_FILE" ]; then
     notify-send "ask-kip" "Missing .env file. Copy .env.example and fill in your values."
@@ -35,12 +38,22 @@ fi
 # shellcheck source=/dev/null
 source "$ENV_FILE"
 
-: "${BOT_TOKEN:?BOT_TOKEN is not set in .env}"
-: "${CHAT_ID:?CHAT_ID is not set in .env}"
+: "${TELEGRAM_API_ID:?TELEGRAM_API_ID is not set in .env}"
+: "${TELEGRAM_API_HASH:?TELEGRAM_API_HASH is not set in .env}"
+: "${KIP_TARGET:?KIP_TARGET is not set in .env}"
 : "${WHISPER_MODEL_PATH:=$WHISPER_MODEL}"
 : "${WHISPER_LANG:=en}"
 
+export TELEGRAM_API_ID TELEGRAM_API_HASH KIP_TARGET
+export TELEGRAM_SESSION="${TELEGRAM_SESSION:-}"
+
 WHISPER_MODEL="$WHISPER_MODEL_PATH"
+
+if [ -x "$VENV_PYTHON" ]; then
+    PYTHON="$VENV_PYTHON"
+else
+    PYTHON="python3"
+fi
 
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 
@@ -90,16 +103,9 @@ if [ -f "$LOCK_FILE" ]; then
 
     notify-send "ask-kip" "Sending: $TEXT"
 
-    RESPONSE=$(curl -s -X POST \
-        "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-        -d "chat_id=${CHAT_ID}" \
-        --data-urlencode "text=${TEXT}")
-
-    OK=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('ok',''))" 2>/dev/null)
-
-    if [ "$OK" != "True" ]; then
-        notify-send "ask-kip" "Telegram send failed — check BOT_TOKEN in .env"
-        echo "ERROR: Telegram API response: $RESPONSE" >&2
+    if ! SEND_ERR=$("$PYTHON" "$SEND_SCRIPT" send "$TEXT" 2>&1 >/dev/null); then
+        notify-send "ask-kip" "Telegram send failed — run: make login"
+        echo "ERROR: $SEND_ERR" >&2
         exit 1
     fi
 

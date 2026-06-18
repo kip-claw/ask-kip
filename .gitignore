@@ -1,5 +1,12 @@
 # Credentials — never commit
 .env
+.telegram.session
+.telegram.session-journal
+*.session
+*.session-journal
+
+# Python virtual environment
+.venv/
 
 # whisper.cpp build artifacts and models
 whisper.cpp/build/
