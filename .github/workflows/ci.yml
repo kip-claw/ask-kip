@@ -19,11 +19,6 @@ jobs:
       - name: Lint ask-kip.sh
         run: shellcheck ask-kip.sh
 
-      - name: Lint Makefile shell fragments
-        run: |
-          # Extract inline shell from Makefile and check for obvious issues
-          shellcheck --shell=bash <(grep -A1 'run:' .github/workflows/ci.yml | grep -v 'run:' || true)
-
   validate:
     name: Validate repo structure
     runs-on: ubuntu-latest
