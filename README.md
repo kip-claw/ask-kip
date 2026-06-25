@@ -17,13 +17,14 @@ No cloud STT. No always-on process. No GPU required.
 
 - Linux with GNOME (or any desktop environment that supports custom hotkey commands)
 - `build-essential`, `cmake`, `python3`, `python3-venv`, `arecord` (alsa-utils), `libnotify-bin`
+- `python3-gi` + `gir1.2-gtk-3.0` for the Growl-style corner popup (falls back to `notify-send` if missing)
 - A Kip / OpenClaw instance reachable on Telegram
 - Telegram API credentials (`api_id` + `api_hash`) from [my.telegram.org](https://my.telegram.org)
 
 Install dependencies on Ubuntu/Debian:
 
 ```bash
-sudo apt install build-essential cmake python3 python3-venv alsa-utils libnotify-bin
+sudo apt install build-essential cmake python3 python3-venv alsa-utils libnotify-bin python3-gi gir1.2-gtk-3.0
 ```
 
 ---
@@ -146,6 +147,8 @@ bash whisper.cpp/models/download-ggml-model.sh medium.en  # ~1.5GB, ~5x slower
 ## Troubleshooting
 
 **No notification on hotkey press** — confirm `libnotify-bin` is installed and the path in your hotkey config is absolute. Run `make test` to check the full setup.
+
+**Popups appear in GNOME's notification list instead of the corner** — the Growl-style bubble needs `python3-gi` and `gir1.2-gtk-3.0`. Without them the script falls back to `notify-send`, whose banners collapse into the notification list.
 
 **`arecord` captures silence** — run `arecord -l` to list capture devices. If your mic isn't the default, add `-D hw:X,Y` to the `arecord` line in `ask-kip.sh`.
 

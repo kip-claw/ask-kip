@@ -27,10 +27,34 @@ WHISPER_MODEL="$SCRIPT_DIR/whisper.cpp/models/ggml-base.en.bin"
 SEND_SCRIPT="$SCRIPT_DIR/send_message.py"
 VENV_PYTHON="$SCRIPT_DIR/.venv/bin/python"
 
+GROWL_SCRIPT="$SCRIPT_DIR/growl.py"
+# growl.py needs a Python with PyGObject (GTK 3); the project venv usually
+# doesn't have it, so prefer the system interpreter.
+GROWL_PYTHON="$(command -v /usr/bin/python3 || command -v python3 || true)"
+GROWL_OK=0
+if [ -f "$GROWL_SCRIPT" ] && [ -n "$GROWL_PYTHON" ] && \
+    "$GROWL_PYTHON" -c "import gi" >/dev/null 2>&1; then
+    GROWL_OK=1
+fi
+
+# notify — show a Growl-style popup in the top-right corner instead of letting
+# the message collapse into GNOME's notification list. Falls back to
+# notify-send if the popup helper or a GTK-capable Python isn't available.
+notify() {
+    local title="$1" body="$2"
+    if [ "$GROWL_OK" -eq 1 ]; then
+        GDK_BACKEND=x11 setsid "$GROWL_PYTHON" "$GROWL_SCRIPT" "$title" "$body" \
+            </dev/null >/dev/null 2>&1 &
+        disown 2>/dev/null || true
+    else
+        notify-send "$title" "$body"
+    fi
+}
+
 # ── Load config ────────────────────────────────────────────────────────────────────────────────────
 
 if [ ! -f "$ENV_FILE" ]; then
-    notify-send "ask-kip" "Missing .env file. Copy .env.example and fill in your values."
+    notify "ask-kip" "Missing .env file. Copy .env.example and fill in your values."
     echo "ERROR: Missing .env file at $ENV_FILE" >&2
     exit 1
 fi
@@ -58,13 +82,13 @@ fi
 # ── Sanity checks ─────────────────────────────────────────────────────────────
 
 if [ ! -f "$WHISPER_BIN" ]; then
-    notify-send "ask-kip" "whisper-cli not found. Run: make install"
+    notify "ask-kip" "whisper-cli not found. Run: make install"
     echo "ERROR: whisper-cli not found at $WHISPER_BIN. Run: make install" >&2
     exit 1
 fi
 
 if [ ! -f "$WHISPER_MODEL" ]; then
-    notify-send "ask-kip" "Whisper model not found. Run: make install"
+    notify "ask-kip" "Whisper model not found. Run: make install"
     echo "ERROR: Whisper model not found at $WHISPER_MODEL. Run: make install" >&2
     exit 1
 fi
@@ -84,7 +108,7 @@ if [ -f "$LOCK_FILE" ]; then
         sleep 0.1
     done
 
-    notify-send "ask-kip" "Transcribing..."
+    notify "ask-kip" "Transcribing..."
 
     "$WHISPER_BIN" \
         -m "$WHISPER_MODEL" \
@@ -96,27 +120,27 @@ if [ -f "$LOCK_FILE" ]; then
         2>/dev/null
 
     if [ ! -f "$TRANSCRIPT_FILE" ]; then
-        notify-send "ask-kip" "Transcription failed — no output produced"
+        notify "ask-kip" "Transcription failed — no output produced"
         exit 1
     fi
 
     TEXT=$(tr -d '\n' < "$TRANSCRIPT_FILE" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
 
     if [ -z "$TEXT" ]; then
-        notify-send "ask-kip" "Nothing transcribed — try again"
+        notify "ask-kip" "Nothing transcribed — try again"
         rm -f "$AUDIO_FILE" "$TRANSCRIPT_FILE"
         exit 0
     fi
 
-    notify-send "ask-kip" "Sending: $TEXT"
+    notify "ask-kip" "Sending: $TEXT"
 
     if ! SEND_ERR=$("$PYTHON" "$SEND_SCRIPT" send "$TEXT" 2>&1 >/dev/null); then
-        notify-send "ask-kip" "Telegram send failed — run: make login"
+        notify "ask-kip" "Telegram send failed — run: make login"
         echo "ERROR: $SEND_ERR" >&2
         exit 1
     fi
 
-    notify-send "ask-kip" "Sent ✓"
+    notify "ask-kip" "Sent ✓"
     rm -f "$AUDIO_FILE" "$TRANSCRIPT_FILE"
 
 else
@@ -125,7 +149,7 @@ else
     pkill -f "arecord.*$AUDIO_FILE" 2>/dev/null || true
     rm -f "$LOCK_FILE"
 
-    notify-send "ask-kip" "Recording... (press hotkey again to send)"
+    notify "ask-kip" "Recording... (press hotkey again to send)"
 
     arecord -f S16_LE -r 16000 -c 1 "$AUDIO_FILE" &
     echo $! > "$LOCK_FILE"
