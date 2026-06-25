@@ -55,9 +55,10 @@ log() {
 # ── Sound cues ────────────────────────────────────────────────────────────────
 
 # Freedesktop event sounds played when recording starts and stops. The canberra
-# event id and the matching .oga filename share these names.
-CUE_START="service-login"
-CUE_STOP="service-logout"
+# event id and the matching .oga filename share these names. Kept short so the
+# cue ends well before the next button press.
+CUE_START="bell"
+CUE_STOP="message"
 
 # play_cue — play a short, non-blocking sound cue. Best effort; never fatal.
 play_cue() {
@@ -274,16 +275,24 @@ if [ -f "$LOCK_FILE" ]; then
 
     TEXT=$(tr -d '\n' < "$TRANSCRIPT_FILE" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
 
-    if [ -z "$TEXT" ]; then
-        log "Nothing transcribed"
+    # Whisper emits placeholder markers like [BLANK_AUDIO] or [ Silence ] when
+    # the recording has no speech. Strip those out so a silent take counts as
+    # empty and nothing is sent.
+    STRIPPED=$(printf '%s' "$TEXT" \
+        | sed -E 's/\[[[:space:]]*(BLANK_AUDIO|SILENCE|silence|Silence|blank|BLANK|inaudible|INAUDIBLE|music|MUSIC|Music|sound|SOUND|noise|NOISE)[[:space:]]*\]//g' \
+        | sed -E 's/\([[:space:]]*(blank|silence|inaudible|no audio|no speech)[[:space:]]*\)//gI' \
+        | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
+
+    if [ -z "$STRIPPED" ]; then
+        log "Nothing transcribed (blank audio)"
         notify "ask-kip" "Nothing transcribed — try again"
         exit 0
     fi
 
-    log "Sending: $TEXT"
-    notify "ask-kip" "Sending: $TEXT"
+    log "Sending: $STRIPPED"
+    notify "ask-kip" "Sending: $STRIPPED"
 
-    if ! SEND_ERR=$("$PYTHON" "$SEND_SCRIPT" send "$TEXT" 2>&1 >/dev/null); then
+    if ! SEND_ERR=$("$PYTHON" "$SEND_SCRIPT" send "$STRIPPED" 2>&1 >/dev/null); then
         log "Telegram send failed: $SEND_ERR"
         notify "ask-kip" "Telegram send failed — run: make login"
         echo "ERROR: $SEND_ERR" >&2
