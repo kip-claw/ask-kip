@@ -18,6 +18,7 @@ No cloud STT. No always-on process. No GPU required.
 - Linux with GNOME (or any desktop environment that supports custom hotkey commands)
 - `build-essential`, `cmake`, `python3`, `python3-venv`, `arecord` (alsa-utils), `libnotify-bin`
 - `python3-gi` + `gir1.2-gtk-3.0` for the Growl-style corner popup (falls back to `notify-send` if missing)
+- A sound player for the start/stop cues — `libcanberra-gtk3-module`, `pipewire-bin`, or `alsa-utils` (optional; cues are skipped if none is present, or set `SOUND_CUES=0`)
 - A Kip / OpenClaw instance reachable on Telegram
 - Telegram API credentials (`api_id` + `api_hash`) from [my.telegram.org](https://my.telegram.org)
 
@@ -126,6 +127,17 @@ bash whisper.cpp/models/download-ggml-model.sh small.en   # ~460MB, ~2x slower
 bash whisper.cpp/models/download-ggml-model.sh medium.en  # ~1.5GB, ~5x slower
 ```
 
+### Warm Whisper server
+
+By default ask-kip keeps `whisper-server` running in the background so the model
+stays loaded between presses, avoiding a model reload on every query. The server
+is started lazily on first use (so the first query after a reboot is slower) and
+binds to `127.0.0.1` only. If it's unavailable for any reason, ask-kip
+automatically falls back to the one-shot `whisper-cli`.
+
+Tune it in `.env` with `WHISPER_SERVER` (set `0` to disable), `WHISPER_HOST`, and
+`WHISPER_PORT`. Server logs are written to `~/.local/state/ask-kip/whisper-server.log`.
+
 ---
 
 ## Makefile targets
@@ -160,6 +172,14 @@ bash whisper.cpp/models/download-ggml-model.sh medium.en  # ~1.5GB, ~5x slower
 
 ```bash
 rm -f /tmp/ask-kip-recording.lock
+```
+
+A forgotten recording also auto-stops on its own once `MAX_RECORD_SECONDS` (default 1 hour) is reached, discarding the audio.
+
+**Nothing happens on hotkey press** — because the script runs from a hotkey, errors aren't visible on screen. Check the log:
+
+```bash
+tail -f ~/.local/state/ask-kip/ask-kip.log
 ```
 
 ---
